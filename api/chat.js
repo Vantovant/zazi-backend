@@ -14,14 +14,12 @@
   res.setHeader("Access-Control-Allow-Headers", "Content-Type");
   // --- end CORS ---
 
-  if (req.method === "OPTIONS") {
-    return res.status(200).end();
-  }
+  if (req.method === "OPTIONS") return res.status(200).end();
 
   if (req.method === "GET") {
     return res.status(200).json({
       ok: true,
-      message: "Use POST /api/chat with JSON body: { message: \"...\" }"
+      message: "POST /api/chat with JSON: { message: \"...\" }"
     });
   }
 
@@ -48,16 +46,14 @@
         input: [
           {
             role: "system",
-            content: [
-              {
-                type: "text",
-                text:
-                  "You are Zazi, an APLGO Q&A assistant for onlinecourseformlm.com. " +
-                  "Be short, clear, and practical. " +
-                  "If asked medical questions: give general wellness info and recommend seeing a qualified health professional. " +
-                  "Never claim to cure. If unsure, ask ONE short follow-up question."
-              }
-            ]
+            content: [{
+              type: "text",
+              text:
+                "You are Zazi, an APLGO Q&A assistant for onlinecourseformlm.com. " +
+                "Be short, clear, and practical. " +
+                "If asked medical questions: give general wellness info and recommend seeing a qualified health professional. " +
+                "Never claim to cure. If unsure, ask ONE short follow-up question."
+            }]
           },
           { role: "user", content: [{ type: "text", text }] }
         ]
@@ -65,9 +61,39 @@
     });
 
     const data = await r.json();
-    const reply = data.output_text || "I couldn’t answer that. Please try again.";
+
+    // ✅ If OpenAI returned an error, show it clearly (no secrets)
+    if (!r.ok) {
+      const msg =
+        data?.error?.message ||
+        data?.message ||
+        "OpenAI returned an error (unknown).";
+
+      console.log("OpenAI error:", r.status, msg);
+      return res.status(502).json({
+        reply: "Backend error: " + msg
+      });
+    }
+
+    // ✅ Robust text extraction (works even if output_text is missing)
+    let reply = data.output_text;
+
+    if (!reply && Array.isArray(data.output)) {
+      // try to find text in output blocks
+      for (const item of data.output) {
+        const content = item?.content || [];
+        for (const c of content) {
+          if (c?.type === "output_text" && c?.text) reply = c.text;
+          if (c?.type === "text" && c?.text) reply = c.text;
+        }
+      }
+    }
+
+    reply = reply || "I couldn’t answer that. Please try again.";
     return res.status(200).json({ reply });
+
   } catch (err) {
+    console.log("Server exception:", err?.message || err);
     return res.status(500).json({ reply: "Server error. Please try again." });
   }
 }
